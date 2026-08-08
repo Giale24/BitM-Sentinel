@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BitM Sentinel</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="header">
+    <div class="logo">
+      <span class="icon">🛡️</span>
+      <span class="title">BitM Sentinel</span>
+    </div>
+    <span class="badge" id="statusBadge">CHECKING</span>
+  </div>
+
+  <div class="main-card">
+    <div class="score-container">
+      <div class="score-circle" id="scoreCircle">
+        <span class="score-val" id="scoreValue">--</span>
+        <span class="score-label">Risk Score</span>
+      </div>
+      <div class="meta-info">
+        <div class="info-row">
+          <span class="label">Stato Navigazione:</span>
+          <span class="value" id="statusValue">In verifica...</span>
+        </div>
+        <div class="info-row">
+          <span class="label">Latenza Backend:</span>
+          <span class="value" id="latencyValue">-- ms</span>
+        </div>
+        <div class="info-row">
+          <span class="label">Attacco Rilevato:</span>
+          <span class="value" id="attackTypeValue">Nessuno</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="reasoning-box">
+      <div class="box-title">Motivazione espressa da LLM:</div>
+      <p id="reasoningText" class="reasoning-text">Analisi della pagina in corso...</p>
+    </div>
+  </div>
+
+  <div class="actions">
+    <button id="btnReanalyze" class="btn primary">🔍 Analizza Pagina</button>
+    <button id="btnToggleSettings" class="btn secondary">⚙️ Impostazioni</button>
+  </div>
+
+  <div class="settings-panel hidden" id="settingsPanel">
+    <label for="backendUrlInput">Endpoint LLM Backend (FastAPI):</label>
+    <input type="text" id="backendUrlInput" value="http://localhost:8000/api/v1/analyze" placeholder="http://localhost:8000/api/v1/analyze">
+    <button id="btnSaveSettings" class="btn primary small">Salva Configurazione</button>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

@@ -1,0 +1,22 @@
+# Ambienti Virtuali Python
+venv/
+.venv/
+env/
+.env/
+
+# File d'ambiente (MOLTO IMPORTANTE: Non caricare MAI le API KEY su GitHub!)
+.env
+.env.local
+
+# Cache di Python
+__pycache__/
+*.pyc
+*.pyo
+
+# IDE e cartelle di sistema
+.vscode/
+.idea/
+.DS_Store
+
+# Log
+*.log

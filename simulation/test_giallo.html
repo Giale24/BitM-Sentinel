@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <title>Sito Sospetto</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 50px; background-color: #fff9c4; }
+        .login-box { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); width: 300px; margin: 0 auto; }
+        input { width: 90%; padding: 10px; margin: 10px 0; }
+        button { width: 100%; padding: 10px; background: #f57f17; color: white; border: none; font-weight: bold; cursor: pointer; }
+    </style>
+</head>
+<body>
+    <div class="login-box">
+        <h2>Accedi al servizio</h2>
+        <p>Inserisci i tuoi dati:</p>
+        <!-- Invia i dati in GET (insicuro) sullo stesso dominio, generando un warning (Giallo) -->
+        <form action="" method="GET">
+            <input type="text" name="username" placeholder="Username" required>
+            <input type="password" name="password" placeholder="Password" required>
+            <button type="submit">Log in</button>
+        </form>
+        <!-- Un iframe invisibile per far salire leggermente lo score euristico senza sforare nel rosso -->
+        <iframe src="about:blank" style="display:none;"></iframe>
+    </div>
+</body>
+</html>
