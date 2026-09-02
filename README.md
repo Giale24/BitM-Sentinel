@@ -15,6 +15,11 @@ I tradizionali sistemi difensivi di rete (firewall, proxy e filtri DNS) non ries
 
 ## 🏗️ Architettura e Fasi di Funzionamento
 
+<p align="center">
+      <img src="architettura.png" alt="Schermata di Blocco
+  BitM" width="600"/>
+    </p>
+
 Il sistema opera attraverso **3 livelli sequenziali e complementari**:
 
 ### 1️⃣ Livello 1: Sonda Client-Side (Estensione Chrome Manifest V3)
