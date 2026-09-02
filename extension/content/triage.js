@@ -110,6 +110,24 @@ window.BitMTriage = {
       flags.push(`Rilevati ${hiddenIframeCount} iframe invisibili (potenziali tracker o clickjacking)`);
     }
 
+    // 5. Controllo Video/Canvas Streaming BitM (es. Cuddlephish / noVNC / WebRTC)
+    const streamElements = document.querySelectorAll("video, canvas");
+    let hasStreamingBitM = false;
+    streamElements.forEach((el) => {
+      const style = window.getComputedStyle(el);
+      const isFullScreen = (el.style.width && el.style.width.includes("100")) || 
+                           parseInt(style.width) >= window.innerWidth * 0.8;
+      if (isFullScreen) {
+        hasStreamingBitM = true;
+      }
+    });
+
+    if (hasStreamingBitM && forms.length === 0) {
+      score += 65;
+      flags.push("Rilevato flusso video/canvas a tutto schermo senza form nativi (potenziale BitM Streaming/noVNC/WebRTC)");
+      hasSensitiveInput = true;
+    }
+
     return {
       triageScore: Math.min(score, 100),
       flags: flags,

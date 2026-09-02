@@ -23,9 +23,9 @@ class LLMClient:
         if cache_key in LLMClient._cache:
             print(f"[LLMClient Cache Hit] Risposta recuperata dalla cache locale per: {url}")
             return LLMClient._cache[cache_key]
-        # Smistamento dei modelli LLM in base al provider configurato nel file .env, con fallback su Gemini se non specificato
-        provider = settings.LLM_PROVIDER.lower()
-        model_name = settings.LLM_MODEL
+        # Smistamento dei modelli LLM in base al provider configurato nel file .env
+        provider = settings.LLM_PROVIDER.strip().lower()
+        model_name = settings.LLM_MODEL.strip()
         user_prompt = build_user_prompt(payload) #funzione file prompts.py
 
         try:
@@ -33,18 +33,20 @@ class LLMClient:
                 response = await LLMClient._call_ollama(model_name, user_prompt)
             elif provider == "gemini":
                 response = await LLMClient._call_gemini(model_name, user_prompt)
-            elif provider == "openai":
+            elif provider in ("openai", "deepseek"):
                 response = await LLMClient._call_openai(model_name, user_prompt)
             else:
-                response = await LLMClient._call_gemini(model_name, user_prompt)
+                response = await LLMClient._call_openai(model_name, user_prompt)
 
-            # Salva in cache
+            # Salva in cache solo se la risposta è valida
             LLMClient._cache[cache_key] = response
             return response
 
         #fallback in caso di errori o superamento della quota LLM, ritorna un risultato euristico gestito dal backend
         except Exception as e:
-            print(f"[LLMClient Error] Fallimento chiamata LLM ({provider}/{model_name}): {e}")
+            import traceback
+            print(f"[LLMClient Error] Fallimento chiamata LLM ({provider}/{model_name}): {repr(e)}")
+            traceback.print_exc()
             return AnalysisResponse(
                 risk_score=0,
                 mitigation_action="ALLOW",
@@ -65,21 +67,14 @@ class LLMClient:
 
         client = genai.Client(api_key=settings.GEMINI_API_KEY)
 
-        # Se il modello primario è in rate limit, proviamo con gemini-3.6-flash
-        models_to_try = [model]
-        if "gemini-3.6-flash" not in model: #fallback su gemini-3.6-flash se il modello primario è in rate limit e se non è già quello configurato nel file .env
-            models_to_try.append("gemini-3.6-flash")
-
         last_error = None
-        for current_model in models_to_try:
-            for attempt in range(retries):
-                try:
-                    print(f"\n[Gemini API - {current_model}] Invio richiesta in corso (Tentativo {attempt+1}/{retries})...")
-                    # Se vuoi vedere l'intero prompt decommenta la riga sotto:
-                    # print(f"[Gemini API] Prompt:\n{user_prompt}\n")
+        for attempt in range(retries):
+            try:
+                print(f"\n[Gemini API - {model}] Invio richiesta in corso (Tentativo {attempt+1}/{retries})...")
 
-                    response = await client.aio.models.generate_content(
-                        model=current_model,
+                response = await asyncio.wait_for(
+                    client.aio.models.generate_content(
+                        model=model,
                         contents=user_prompt,
                         config=types.GenerateContentConfig(
                             system_instruction=BITM_SYSTEM_PROMPT,
@@ -87,29 +82,31 @@ class LLMClient:
                             response_mime_type="application/json",
                             response_schema=AnalysisResponse,
                         )
-                    )
-                    
-                    print(f"[Gemini API - {current_model}] Risposta ricevuta correttamente!")
-                    # Stampa il testo grezzo restituito dall'LLM per debug
-                    if response.text:
-                        print(f"[Gemini Debug JSON] {response.text}")
+                    ),
+                    timeout=25.0
+                )
+                
+                print(f"[Gemini API - {model}] Risposta ricevuta correttamente!")
+                if response.text:
+                    print(f"[Gemini Debug JSON] {response.text}")
 
-                    if hasattr(response, "parsed") and response.parsed:
-                        return response.parsed
-                    elif response.text:
-                        return LLMClient._parse_json_response(response.text)
+                if hasattr(response, "parsed") and response.parsed:
+                    return response.parsed
+                elif response.text:
+                    return LLMClient._parse_json_response(response.text)
 
-                    #gestione errore 429
-                except APIError as e:
-                    if e.code == 429: # Rate Limit
-                        print(f"[Gemini 429 Rate Limit] Tentativo {attempt+1}/{retries} su {current_model}. Attesa di 2 sec...")
-                        await asyncio.sleep(2) # await per 2 secondi prima di riprovare
-                        continue
-                    last_error = str(e)
-                    break # Interrompi i tentativi su errori non 429
-                except Exception as e:
-                    last_error = str(e)
-                    break # Interrompi sui fallimenti SDK generici
+            except APIError as e:
+                print(f"[Gemini APIError on {model}]: Code {e.code} - {e.message}")
+                if e.code == 429: # Rate Limit
+                    print(f"[Gemini 429 Rate Limit] Tentativo {attempt+1}/{retries}. Attesa di 2 sec...")
+                    await asyncio.sleep(2)
+                    continue
+                last_error = str(e)
+                break
+            except Exception as e:
+                print(f"[Gemini Exception on {model}]: {repr(e)}")
+                last_error = str(e)
+                break
 
         raise Exception(f"Gemini API Error: {last_error or '429 Too Many Requests (Quota superata)'}")
 
@@ -126,7 +123,7 @@ class LLMClient:
             "stream": False
         }
 
-        async with httpx.AsyncClient(timeout=45.0) as client:
+        async with httpx.AsyncClient(timeout=120.0) as client:
             resp = await client.post(url, json=payload)
             resp.raise_for_status()
             data = resp.json()
@@ -135,34 +132,62 @@ class LLMClient:
 
     @staticmethod
     async def _call_openai(model: str, user_prompt: str) -> AnalysisResponse:
-        """Invia la richiesta a OpenAI usando le funzionalità beta Structured Outputs (Pydantic)"""
+        """Invia la richiesta a OpenAI o provider compatibili (es. DeepSeek)"""
         if not settings.OPENAI_API_KEY:
             raise ValueError("OPENAI_API_KEY non configurata nel file .env")
 
         from openai import AsyncOpenAI
-        client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
         
-        response = await client.beta.chat.completions.parse(
-            model=model,
-            messages=[
-                {"role": "system", "content": BITM_SYSTEM_PROMPT},
-                {"role": "user", "content": user_prompt}
-            ],
-            response_format=AnalysisResponse,
-            temperature=0.1 #freddezza del modello
-        )
-        return response.choices[0].message.parsed
+        # Rilevamento automatico DeepSeek
+        is_deepseek = "deepseek" in model.lower()
+        base_url = "https://api.deepseek.com" if is_deepseek else None
+        
+        client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY, base_url=base_url)
+        
+        if is_deepseek:
+            # DeepSeek supporta la modalità JSON standard
+            response = await client.chat.completions.create(
+                model=model,
+                messages=[
+                    {"role": "system", "content": BITM_SYSTEM_PROMPT},
+                    {"role": "user", "content": user_prompt}
+                ],
+                response_format={"type": "json_object"},
+                temperature=0.1
+            )
+            content = response.choices[0].message.content
+            return LLMClient._parse_json_response(content)
+        else:
+            # OpenAI nativo supporta i Pydantic Structured Outputs (Beta)
+            response = await client.beta.chat.completions.parse(
+                model=model,
+                messages=[
+                    {"role": "system", "content": BITM_SYSTEM_PROMPT},
+                    {"role": "user", "content": user_prompt}
+                ],
+                response_format=AnalysisResponse,
+                temperature=0.1
+            )
+            if response.choices[0].message.parsed:
+                return response.choices[0].message.parsed
+            else:
+                return LLMClient._parse_json_response(response.choices[0].message.content)
 
     #esegue il parsing della risposta JSON grezza dell'LLM e la converte in un oggetto AnalysisResponse
     @staticmethod
     def _parse_json_response(raw_text: str) -> AnalysisResponse:
-        clean_text = raw_text.strip()
-        if clean_text.startswith("```json"):
-            clean_text = clean_text[7:]
-        if clean_text.endswith("```"):
-            clean_text = clean_text[:-3]
-
+        import re
+        import json
+        
+        # Estrae il blocco JSON (tutto ciò che sta tra la prima { e l'ultima })
+        # ignorando qualsiasi testo precedente come i blocchi <think> di DeepSeek
+        match = re.search(r'\{.*\}', raw_text, re.DOTALL)
+        if not match:
+            raise ValueError("Nessun JSON valido trovato nella risposta dell'LLM.")
+            
+        clean_text = match.group(0)
         parsed = json.loads(clean_text)
+        
         return AnalysisResponse(
             risk_score=int(parsed.get("risk_score", 0)),
             mitigation_action=str(parsed.get("mitigation_action", "ALLOW")).upper(),

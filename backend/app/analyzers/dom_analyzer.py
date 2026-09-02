@@ -41,11 +41,27 @@ class DOMAnalyzer:
                     pass
 
             # 2. Controllo porta proxy di simulazione (5001) o flag di triage
-            if "5001" in page_url or "proxy" in page_url or "evil" in page_url or request.triageScore >= 40:
+            if "5001" in page_url or "proxy" in page_url or "evil" in page_url:
                 score = max(score, 95)
                 attack_type = "BITM_PROXY"
                 if "Attacco Proxy BitM rilevato" not in anomalies:
                     anomalies.append("Attacco Proxy BitM rilevato: pagina form proxata con intercettazione credenziali")
+
+        # 3. Controllo BitM Streaming o IP grezzo non cifrato con titolo bancario/sensibile
+        page_title = (request.title or "").lower()
+        is_banking_or_login = any(w in page_title for w in ["bank", "mutual", "altoro", "login", "accesso", "postepay", "intesa", "paypal", "microsoft", "google"])
+        is_raw_ip = any(c.isdigit() for c in page_domain) and "." in page_domain
+
+        if is_banking_or_login and is_raw_ip and "http:" in page_url:
+            score = max(score, 80)
+            if attack_type == "NONE":
+                attack_type = "PHISHING_OR_BITM"
+            anomalies.append(f"Servizio bancario/autenticazione '{request.title}' erogato su indirizzo IP grezzo ({page_host}) senza cifratura HTTPS")
+
+        if request.triageScore >= 40:
+            score = max(score, request.triageScore)
+            if attack_type == "NONE":
+                attack_type = "BITM_STREAMING"
 
         return score, attack_type, anomalies
 
