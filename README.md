@@ -17,7 +17,7 @@ I tradizionali sistemi difensivi di rete (firewall, proxy e filtri DNS) non ries
 
 <p align="center">
       <img src="architettura.png" alt="Schermata di Blocco
-  BitM" width="600"/>
+  BitM" width="800"/>
     </p>
 
 Il sistema opera attraverso **3 livelli sequenziali e complementari**:
