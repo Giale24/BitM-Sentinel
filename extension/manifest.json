@@ -4,7 +4,6 @@
   "version": "1.0.0",
   "description": "Rilevamento e mitigazione in tempo reale di attacchi Browser-in-the-Middle (BitM) tramite LLM.",
   "permissions": [
-    "activeTab",
     "storage",
     "scripting"
   ],

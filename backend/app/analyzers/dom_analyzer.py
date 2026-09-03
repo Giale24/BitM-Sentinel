@@ -40,17 +40,34 @@ class DOMAnalyzer:
                 except Exception:
                     pass
 
-            # 2. Controllo porta proxy di simulazione (5001) o flag di triage
-            if "5001" in page_url or "proxy" in page_url or "evil" in page_url:
-                score = max(score, 95)
-                attack_type = "BITM_PROXY"
-                if "Attacco Proxy BitM rilevato" not in anomalies:
-                    anomalies.append("Attacco Proxy BitM rilevato: pagina form proxata con intercettazione credenziali")
+            # Controllo CWE-598: Password o credenziali inviate via metodo HTTP GET non sicuro
+            if is_sensitive and (form.method or "").upper() == "GET":
+                score = max(score, 45)
+                if attack_type == "NONE":
+                    attack_type = "INSECURE_AUTH_METHOD"
+                anomalies.append("Form con credenziali/token invia dati sensibili tramite metodo HTTP GET non cifrato (CWE-598)")
+
+        # 2. Controllo porta proxy di simulazione (porta 5001 su localhost/127.0.0.1)
+        # Eseguito a livello di pagina (non dentro il ciclo form) con controllo rigoroso su porta e host
+        is_simulation_proxy = (parsed_page.port == 5001) and (page_domain in ("localhost", "127.0.0.1"))
+        if is_simulation_proxy:
+            score = max(score, 95)
+            attack_type = "BITM_PROXY"
+            if "Attacco Proxy BitM rilevato" not in anomalies:
+                anomalies.append("Attacco Proxy BitM rilevato: pagina form proxata con intercettazione credenziali")
 
         # 3. Controllo BitM Streaming o IP grezzo non cifrato con titolo bancario/sensibile
         page_title = (request.title or "").lower()
         is_banking_or_login = any(w in page_title for w in ["bank", "mutual", "altoro", "login", "accesso", "postepay", "intesa", "paypal", "microsoft", "google"])
-        is_raw_ip = any(c.isdigit() for c in page_domain) and "." in page_domain
+        
+        # Riconoscimento rigoroso di indirizzi IP tramite libreria standard ipaddress
+        is_raw_ip = False
+        try:
+            import ipaddress
+            ipaddress.ip_address(page_domain)
+            is_raw_ip = True
+        except (ValueError, TypeError):
+            is_raw_ip = False
 
         if is_banking_or_login and is_raw_ip and "http:" in page_url:
             score = max(score, 80)
@@ -58,10 +75,24 @@ class DOMAnalyzer:
                 attack_type = "PHISHING_OR_BITM"
             anomalies.append(f"Servizio bancario/autenticazione '{request.title}' erogato su indirizzo IP grezzo ({page_host}) senza cifratura HTTPS")
 
+        # 4. Integrazione dello score e dei flag del triage client-side
         if request.triageScore >= 40:
             score = max(score, request.triageScore)
             if attack_type == "NONE":
-                attack_type = "BITM_STREAMING"
+                # Mappatura accurata della tipologia di attacco in base ai flag effettivi
+                flags_text = " ".join(request.triageFlags).lower()
+                if "streaming" in flags_text or "video/canvas" in flags_text:
+                    attack_type = "BITM_STREAMING"
+                elif "typosquatting" in flags_text or "simile" in flags_text:
+                    attack_type = "TYPOSQUATTING"
+                elif "sottodominio" in flags_text:
+                    attack_type = "BITM_PROXY"
+                elif "iframe" in flags_text:
+                    attack_type = "CLICKJACKING"
+                elif "cwe-598" in flags_text or "metodo http get" in flags_text:
+                    attack_type = "INSECURE_AUTH_METHOD"
+                else:
+                    attack_type = "SUSPICIOUS_DOM_STRUCTURE"
 
         return score, attack_type, anomalies
 
@@ -87,13 +118,41 @@ class DOMAnalyzer:
         else:
             final_action = "ALLOW"
 
-        # Combina le anomalie
-        all_anomalies = list(set(heuristic_anomalies + llm_response.detected_anomalies))
+        # Deduplicazione semantica delle anomalie (elimina doppioni con formulazioni leggermente diverse)
+        seen_topics = set()
+        all_anomalies = []
 
-        # Motivazione visibile
+        def get_anomaly_topic(anomaly_text: str) -> str:
+            a = anomaly_text.lower()
+            if "cwe-598" in a or "metodo http get" in a or "get non sicuro" in a or "get non cifrato" in a:
+                return "cwe_598_get"
+            if "host terzo" in a or "porta diversa" in a or "proxy" in a or "reindirizza" in a:
+                return "proxy_redirect"
+            if "streaming" in a or "video/canvas" in a or "webrtc" in a or "novnc" in a:
+                return "streaming"
+            if "ip grezzo" in a or "raw ip" in a or "senza cifratura" in a:
+                return "raw_ip"
+            if "iframe" in a or "clickjacking" in a:
+                return "iframe"
+            if "typosquatting" in a or "simile a brand" in a:
+                return "typosquatting"
+            if "sottodominio" in a or "subdomain" in a:
+                return "subdomain"
+            return a.strip()
+
+        for item in heuristic_anomalies + llm_response.detected_anomalies:
+            topic = get_anomaly_topic(item)
+            if topic not in seen_topics:
+                seen_topics.add(topic)
+                all_anomalies.append(item)
+
+        # Motivazione visibile con rilevamento robusto del fallimento LLM
         reasoning = llm_response.reasoning
-        if ("Impossibile contattare" in reasoning or "Quota superata" in reasoning) and final_score >= 75:
-            reasoning = "ATTACCO BITM RILEVATO (Engine Euristico Backend): La form di login/2FA reindirizza le credenziali su un proxy non autorizzato."
+        llm_failed = any(err_token in reasoning.lower() for err_token in ["quota", "temporaneamente superata", "impossibile contattare", "non disponibile", "api error"])
+
+        if llm_failed and final_score >= 75:
+            anomalies_str = ", ".join(heuristic_anomalies) if heuristic_anomalies else "violazioni euristiche critiche"
+            reasoning = f"ATTACCO BITM RILEVATO (Engine Euristico Backend - Fail-Safe): Blocco forzato a causa di: {anomalies_str}."
         elif heuristic_score > llm_response.risk_score and final_score >= 40:
             anomalies_str = ", ".join(heuristic_anomalies) if heuristic_anomalies else "segnalazioni euristiche"
             reasoning += f" Tuttavia, l'engine euristico ha forzato lo stato di Sospetto/Blocco (Score: {final_score}) a causa di: {anomalies_str}."

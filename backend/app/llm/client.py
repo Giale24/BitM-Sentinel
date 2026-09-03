@@ -38,11 +38,13 @@ class LLMClient:
             else:
                 response = await LLMClient._call_openai(model_name, user_prompt)
 
-            # Salva in cache solo se la risposta è valida
+            # Salva in cache solo se la risposta è valida (con eviction per prevenire memory leak)
+            if len(LLMClient._cache) >= 200:
+                LLMClient._cache.pop(next(iter(LLMClient._cache)))
             LLMClient._cache[cache_key] = response
             return response
 
-        #fallback in caso di errori o superamento della quota LLM, ritorna un risultato euristico gestito dal backend
+        # Fallback in caso di errori o indisponibilità dell'LLM: ritorno gestito dall'engine euristico
         except Exception as e:
             import traceback
             print(f"[LLMClient Error] Fallimento chiamata LLM ({provider}/{model_name}): {repr(e)}")
@@ -61,7 +63,7 @@ class LLMClient:
         if not settings.GEMINI_API_KEY:
             raise ValueError("GEMINI_API_KEY non configurata nel file .env")
 
-        from google import genai #importate se utilizziamo Google Gemini come provider LLM
+        from google import genai
         from google.genai import types
         from google.genai.errors import APIError
 
@@ -83,7 +85,7 @@ class LLMClient:
                             response_schema=AnalysisResponse,
                         )
                     ),
-                    timeout=25.0
+                    timeout=30.0
                 )
                 
                 print(f"[Gemini API - {model}] Risposta ricevuta correttamente!")
@@ -94,21 +96,32 @@ class LLMClient:
                     return response.parsed
                 elif response.text:
                     return LLMClient._parse_json_response(response.text)
+                else:
+                    finish_reason = "UNKNOWN"
+                    if hasattr(response, "candidates") and response.candidates:
+                        finish_reason = getattr(response.candidates[0], "finish_reason", "BLOCKED")
+                    last_error = f"Risposta vuota o bloccata dai filtri di sicurezza Google (finish_reason: {finish_reason})"
+                    print(f"[Gemini Warning on {model}]: {last_error}")
+                    continue
 
+            except (asyncio.TimeoutError, TimeoutError):
+                last_error = "Timeout (30s) superato durante l'attesa dei server Google Gemini"
+                print(f"[Gemini Timeout on {model}]: {last_error}")
+                break
             except APIError as e:
                 print(f"[Gemini APIError on {model}]: Code {e.code} - {e.message}")
                 if e.code == 429: # Rate Limit
                     print(f"[Gemini 429 Rate Limit] Tentativo {attempt+1}/{retries}. Attesa di 2 sec...")
                     await asyncio.sleep(2)
                     continue
-                last_error = str(e)
+                last_error = f"APIError {e.code}: {e.message}"
                 break
             except Exception as e:
                 print(f"[Gemini Exception on {model}]: {repr(e)}")
-                last_error = str(e)
+                last_error = str(e) if str(e) else repr(e)
                 break
 
-        raise Exception(f"Gemini API Error: {last_error or '429 Too Many Requests (Quota superata)'}")
+        raise Exception(f"Gemini API Error: {last_error or 'Nessuna risposta valida ricevuta dalle API'}")
 
     @staticmethod
     async def _call_ollama(model: str, user_prompt: str) -> AnalysisResponse:
@@ -179,14 +192,33 @@ class LLMClient:
         import re
         import json
         
-        # Estrae il blocco JSON (tutto ciò che sta tra la prima { e l'ultima })
-        # ignorando qualsiasi testo precedente come i blocchi <think> di DeepSeek
-        match = re.search(r'\{.*\}', raw_text, re.DOTALL)
-        if not match:
-            raise ValueError("Nessun JSON valido trovato nella risposta dell'LLM.")
-            
-        clean_text = match.group(0)
-        parsed = json.loads(clean_text)
+        # 1. Rimuove blocchi <think>...</think> (es. DeepSeek R1)
+        cleaned = re.sub(r'<think>[\s\S]*?</think>', '', raw_text).strip()
+
+        parsed = None
+        # 2. Prova a decodificare direttamente se il testo è già un JSON puro
+        try:
+            parsed = json.loads(cleaned)
+        except json.JSONDecodeError:
+            # 3. Estrae blocchi markdown ```json ... ```
+            md_match = re.search(r'```(?:json)?\s*(\{[\s\S]*?\})\s*```', cleaned)
+            if md_match:
+                try:
+                    parsed = json.loads(md_match.group(1))
+                except json.JSONDecodeError:
+                    parsed = None
+
+            # 4. Fallback: delimitazione esatta dalla prima '{' all'ultima '}'
+            if not parsed:
+                start_idx = cleaned.find('{')
+                end_idx = cleaned.rfind('}')
+                if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
+                    try:
+                        parsed = json.loads(cleaned[start_idx:end_idx + 1])
+                    except json.JSONDecodeError:
+                        raise ValueError("Nessun JSON valido trovato nella risposta dell'LLM.")
+                else:
+                    raise ValueError("Nessun JSON valido trovato nella risposta dell'LLM.")
         
         return AnalysisResponse(
             risk_score=int(parsed.get("risk_score", 0)),

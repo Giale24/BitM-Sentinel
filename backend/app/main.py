@@ -17,12 +17,18 @@ app = FastAPI(
     description="Engine di rilevamento e mitigazione in tempo reale di attacchi Browser-in-the-Middle (BitM) tramite LLM."
 )
 
-# Abilita CORS per permettere chiamate dalle estensioni browser
+# Configurazione CORS restrittiva: autorizza esclusivamente estensioni Chrome e localhost, disabilitando credentials
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"], # accetta tutte le richieste HTTP (GET, POST, etc.)
+    allow_origin_regex=r"^chrome-extension://.*",
+    allow_origins=[
+        "http://localhost",
+        "http://127.0.0.1",
+        "http://localhost:8000",
+        "http://127.0.0.1:8000",
+    ],
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["*"],
 )
 #configurazione endpopoin FastAPI 
@@ -53,7 +59,8 @@ async def analyze_page(request: AnalysisRequest):
     """
     response = await DOMAnalyzer.process_analysis(request)
     return response
-#uvicorn server per eseguire l'applicazione FastAPI in locale, con ricarica automatica per lo sviluppo, inotre permette l'asinc/await per le chiamate asincrone all'LLM e alle euristiche server-side.
+
+# Uvicorn server: bind esclusivo su loopback 127.0.0.1 per impedire accessi non autorizzati da LAN/Wi-Fi
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("app.main:app", host="127.0.0.1", port=8000, reload=True)

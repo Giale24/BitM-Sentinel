@@ -35,6 +35,7 @@ window.BitMTriage = {
 
     const currentUrl = new URL(window.location.href);
     const hostname = currentUrl.hostname.toLowerCase();
+    const hostParts = hostname.split(".");
 
     // 1. Controllo Form Sensibili & Mismatch di Dominio Target
     const forms = document.querySelectorAll("form");
@@ -56,8 +57,14 @@ window.BitMTriage = {
           hasSensitiveInput = true;
         }
       });
-      //allarme se il form sensibile invia dati a un dominio terzo (potenziale attacco BitM)
+      // Allarme se il form sensibile invia dati via metodo GET (CWE-598) o a un dominio terzo
       if (containsPassword || containsOtp) {
+        const formMethod = (form.getAttribute("method") || form.method || "GET").toUpperCase();
+        if (formMethod === "GET") {
+          score += 25;
+          flags.push("Form sensibile trasmette credenziali tramite metodo HTTP GET non sicuro (CWE-598)");
+        }
+
         const actionAttr = form.getAttribute("action");
         if (actionAttr) {
           try {
@@ -71,13 +78,16 @@ window.BitMTriage = {
       }
     });
 
-    // 2. Controllo Pattern Subdominio Proxato (stile Evilginx: login.microsoft.com.attacker.com)
-    const hostParts = hostname.split(".");
-    if (hostParts.length > 3) {
-      for (const brand of this.TARGET_BRANDS) {
-        if (hostname.includes(brand) && !hostname.endsWith(`${brand}.com`) && !hostname.endsWith(`${brand}.net`)) {
+    // 2. Controllo Pattern Subdominio Proxato (stile Evilginx: paypal.attacker.com, login.microsoft.com.attacker.com)
+    for (const brand of this.TARGET_BRANDS) {
+      // Verifica se il brand compare come etichetta di sottodominio (es. "paypal.evil.com")
+      const brandSubdomainPattern = new RegExp(`(^|\\.)${brand}\\.`, "i");
+      if (brandSubdomainPattern.test(hostname)) {
+        // Verifica se l'host appartiene legittimamente al brand (es. paypal.com, paypal.it, paypal.co.uk, support.apple.com.cn)
+        const isLegitBrandDomain = new RegExp(`(^|\\.)${brand}\\.([a-z]{2,8}|[a-z]{2,4}\\.[a-z]{2})$`, "i").test(hostname);
+        if (!isLegitBrandDomain) {
           score += 45;
-          flags.push(`Nome brand target (${brand}) rilevato in sotto-dominio di un dominio sconosciuto`);
+          flags.push(`Nome brand target (${brand}) rilevato come sottodominio di un host non ufficiale`);
           break;
         }
       }
@@ -115,16 +125,28 @@ window.BitMTriage = {
     let hasStreamingBitM = false;
     streamElements.forEach((el) => {
       const style = window.getComputedStyle(el);
-      const isFullScreen = (el.style.width && el.style.width.includes("100")) || 
-                           parseInt(style.width) >= window.innerWidth * 0.8;
-      if (isFullScreen) {
+      const computedWidth = parseInt(style.width, 10);
+      const computedHeight = parseInt(style.height, 10);
+      
+      // Controllo esatto sulle dimensioni a schermo intero (evita falsi positivi su 100px, 1080px, ecc.)
+      const isFullWidth = (el.style.width === "100vw" || el.style.width === "100%" || computedWidth >= window.innerWidth * 0.85);
+      const isFullHeight = (el.style.height === "100vh" || el.style.height === "100%" || computedHeight >= window.innerHeight * 0.7);
+
+      if (isFullWidth && isFullHeight) {
         hasStreamingBitM = true;
       }
     });
 
-    if (hasStreamingBitM && forms.length === 0) {
+    // Vincolo contestuale: lo streaming BitM viene segnalato SOLO in presenza di indicatori sensibili (titoli bancari/auth o IP in chiaro)
+    // per non generare falsi positivi su siti video legittimi come YouTube, Twitch o Vimeo.
+    const pageTitle = (document.title || "").toLowerCase();
+    const isSensitiveContext = ["bank", "mutual", "altoro", "login", "accedi", "accesso", "signin", "sign-in", "portal", "verify", "secure", "auth", "2fa", "account"].some(w => pageTitle.includes(w));
+    const isRawIp = /^(\d{1,3}\.){3}\d{1,3}$/.test(hostname);
+    const isUnencryptedHttp = currentUrl.protocol === "http:" && hostname !== "localhost" && hostname !== "127.0.0.1";
+
+    if (hasStreamingBitM && forms.length === 0 && (isSensitiveContext || isRawIp || isUnencryptedHttp)) {
       score += 65;
-      flags.push("Rilevato flusso video/canvas a tutto schermo senza form nativi (potenziale BitM Streaming/noVNC/WebRTC)");
+      flags.push("Rilevato flusso video/canvas a tutto schermo in contesto sensibile/IP senza form nativi (potenziale BitM Streaming/noVNC/WebRTC)");
       hasSensitiveInput = true;
     }
 

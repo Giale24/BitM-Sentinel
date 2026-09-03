@@ -4,11 +4,22 @@
 (function () {
   console.log("[BitM Sentinel] Client inspector inizializzato su:", window.location.href); //Log di debug
 
-  // L'analisi automatica all'avvio è stata disabilitata per risparmiare la quota API (Modalità Manuale)
-  // const triageResult = window.BitMTriage.runFastTriage();
-  // inspectAndAnalyzePage(triageResult);
+  // Stato di rischio locale sincronizzato (consente decisioni immediate e sincrone al submit)
+  let localPageState = {
+    status: "SAFE",
+    riskScore: 0,
+    reasoning: "Pagina in attesa di analisi."
+  };
 
-  // il popup invia un messaggio al content script per forzare l'analisi della pagina quando l'utente clicca il pulsante "Reanalyze"
+  // Esegue un primo triage rapido sincrono all'avvio per valorizzare lo stato locale
+  const initialTriage = window.BitMTriage.runFastTriage();
+  if (initialTriage.triageScore >= 75) {
+    localPageState.status = "BLOCK";
+    localPageState.riskScore = initialTriage.triageScore;
+    localPageState.reasoning = initialTriage.flags.join(". ");
+  }
+
+  // Il popup invia un messaggio al content script per forzare l'analisi della pagina
   chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
     if (req.action === "FORCE_REANALYZE") {
       const freshTriage = window.BitMTriage.runFastTriage();
@@ -16,21 +27,33 @@
     }
   });
 
-  // Intercetta l'invio delle form sensibili per applicare la mitigazione preventiva
+  // Intercetta l'invio delle form sensibili in modo SINCRONO (elimina race condition)
   document.addEventListener("submit", function (e) {
     const form = e.target;
     if (form.querySelector("input[type='password'], input[name*='otp'], input[name*='token']")) {
-      console.log("[BitM Sentinel] Intercettato invio di form sensibile.");
-      // Richiede verifica immediata dello stato
-      chrome.runtime.sendMessage({ action: "GET_TAB_STATUS" }, (response) => {
-        if (response && (response.status === "BLOCK" || response.riskScore >= 75)) {
-          e.preventDefault(); //bloccano l'invio dei dati sensibili
-          e.stopPropagation();
-          window.BitMMitigation.showBlockOverlay(
-            response.reasoning || "Attacco Browser-in-the-Middle (BitM) rilevato. Invio credenziali bloccato."
-          );
-        }
-      });
+      console.log("[BitM Sentinel] Intercettato invio di form sensibile. Verifica sincrona...");
+
+      // 1. Controllo SINCRONO dello stato locale accertato dall'analisi
+      if (localPageState.status === "BLOCK" || localPageState.riskScore >= 75) {
+        e.preventDefault();
+        e.stopPropagation();
+        console.warn("[BitM Sentinel] SUBMIT BLOCCATO SINCRONAMENTE (Stato accertato: BLOCK)");
+        window.BitMMitigation.showBlockOverlay(localPageState.reasoning);
+        return false;
+      }
+
+      // 2. Paracadute: Triage locale istantaneo sincrono (<1ms) se l'utente invia prima dell'analisi remota
+      const immediateTriage = window.BitMTriage.runFastTriage();
+      if (immediateTriage.triageScore >= 75) {
+        e.preventDefault();
+        e.stopPropagation();
+        console.warn("[BitM Sentinel] SUBMIT BLOCCATO SINCRONAMENTE (Triage Immediato)");
+        localPageState.status = "BLOCK";
+        localPageState.riskScore = immediateTriage.triageScore;
+        localPageState.reasoning = immediateTriage.flags.join(". ");
+        window.BitMMitigation.showBlockOverlay(localPageState.reasoning);
+        return false;
+      }
     }
   }, true);
 
@@ -83,6 +106,13 @@
       if (response && response.status === "SUCCESS") {
         const result = response.data;
         console.log(`[BitM Sentinel] Analisi completata in ${result.elapsedMs}ms. Rischio: ${result.riskScore}/100. Azione: ${result.status}`);
+
+        // Aggiorna lo stato sincrono locale per future intercettazioni submit
+        localPageState = {
+          status: result.status,
+          riskScore: result.riskScore,
+          reasoning: result.reasoning
+        };
 
         if (result.status === "BLOCK" || result.riskScore >= 75) {
           if (window.BitMMitigation) window.BitMMitigation.showBlockOverlay(result.reasoning);

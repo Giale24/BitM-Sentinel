@@ -45,6 +45,9 @@ class LegitimateTargetHandler(BaseHTTPRequestHandler):
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.end_headers()
             self.wfile.write(b"<h1>Accesso effettuato con successo nella Banca Sicura.</h1>")
+        else:
+            self.send_response(404)
+            self.end_headers()
 
     def log_message(self, format, *args):
         # Log sintetico

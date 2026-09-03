@@ -5,6 +5,11 @@ const DEFAULT_BACKEND_URL = "http://localhost:8000/api/v1/analyze";
 // Stato in memoria per ciascun Tab
 const tabStates = new Map();
 
+// Eviction automatica alla chiusura delle schede per prevenire memory leak
+chrome.tabs.onRemoved.addListener((closedTabId) => {
+  tabStates.delete(closedTabId);
+});
+
 // Ascolta messaggi inviati dai content scripts (dom_inspector, triage, overlay)
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   const tabId = sender.tab ? sender.tab.id : (request.tabId || null);
@@ -40,7 +45,7 @@ async function handlePageAnalysis(payload, tabId) {
   try {
     const startTime = performance.now();
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 45000); // 45s timeout per LLM locali
+    const timeoutId = setTimeout(() => controller.abort(), 60000); // 60s timeout per cold start LLM
 
     const res = await fetch(backendUrl, {
       method: "POST",
@@ -68,7 +73,10 @@ async function handlePageAnalysis(payload, tabId) {
       url: payload.url
     };
 
-    // Aggiorna lo stato del Tab e l'icona/badge visivo dell'estensione
+    // Aggiorna lo stato del Tab e l'icona/badge visivo dell'estensione (con cap a 100 per prevenire memory leak)
+    if (tabStates.size > 100) {
+      tabStates.delete(tabStates.keys().next().value);
+    }
     if (tabId) {
       tabStates.set(tabId, result);
       updateTabBadge(tabId, result.status, result.riskScore);
@@ -85,15 +93,20 @@ async function handlePageAnalysis(payload, tabId) {
     console.error("[BitM Sentinel] Errore di comunicazione con il backend:", error);
 
     // Fallback sicuro se il backend non risponde o va in timeout
-    const isProxyUrl = payload.url && (payload.url.includes("5001") || payload.url.includes("proxy"));
-    const fallbackScore = isProxyUrl ? 95 : (payload.triageScore || 0);
+    let isSimulationProxy = false;
+    try {
+      const parsedUrl = new URL(payload.url);
+      isSimulationProxy = (parsedUrl.hostname === "localhost" || parsedUrl.hostname === "127.0.0.1") && parsedUrl.port === "5001";
+    } catch (e) {}
+
+    const fallbackScore = isSimulationProxy ? 95 : (payload.triageScore || 0);
     const fallbackStatus = fallbackScore >= 75 ? "BLOCK" : (fallbackScore >= 40 ? "WARN" : "ALLOW");
 
     const fallbackResult = {
       riskScore: fallbackScore,
       status: fallbackStatus,
-      attackType: isProxyUrl ? "BITM_PROXY" : "NONE",
-      reasoning: isProxyUrl
+      attackType: isSimulationProxy ? "BITM_PROXY" : "NONE",
+      reasoning: isSimulationProxy
         ? "ATTACCO BITM RILEVATO (Fallback Locale): Connessione backend interrotta, blocco preventivo attivato."
         : "Impossibile contattare l'LLM Engine backend. Risultato basato su euristiche locale.",
       elapsedMs: 0,
