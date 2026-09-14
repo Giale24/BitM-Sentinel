@@ -42,16 +42,16 @@ Il sistema opera attraverso **3 livelli sequenziali e complementari**:
 
 ---
 
-## 🌐 Supporto Vettori di Attacco: Reverse Proxy & WebRTC Streaming
+## 🌐 Supporto Vettori di Attacco: AiTM Reverse Proxy & BitM Streaming
 
-BitM Sentinel v2.1.1 è in grado di neutralizzare **entrambe le grandi famiglie di attacchi BitM (CAPEC-701)**:
+BitM Sentinel v2.1.1 è in grado di neutralizzare **entrambi i principali paradigmi d'attacco della famiglia Adversary-in-the-Middle (AiTM)**:
 
-1. **Reverse Proxy HTTP Dinamico (stile Evilginx / Modlishka):**
-   * L'attaccante modifica al volo l'attributo `action` della form.
+1. **Reverse Proxy HTTP Dinamico (stile Evilginx / Modlishka / Muraena):**
+   * L'attaccante intercetta il traffico HTTP/HTTPS e modifica al volo l'attributo `action` della form per esfiltrare credenziali e token di sessione autenticati.
    * *Rilevamento:* BitM Sentinel intercetta il *Form Action Mismatch* (es. form servita su `localhost:5001` che tenta di inviare credenziali a un endpoint terzo malevolo) e congela l'evento `submit` in modo sincrono.
 
-2. **Remote Browser Streaming & WebRTC (stile Cuddlephish / noVNC):**
-   * L'attaccante proietta uno streaming video a tutto schermo (`<video playsinline style="width: 100vw">` o `<canvas>`) e usa un keylogger JavaScript via WebSocket per rubare tasti premuti e mouse.
+2. **Browser-in-the-Middle (BitM, CAPEC-701) & Remote Browser Streaming (stile Cuddlephish / noVNC):**
+   * L'attaccante alloca una sessione browser remota e ne proietta il rendering video a tutto schermo (`<video playsinline style="width: 100vw">` o `<canvas>`), catturando tastiera e mouse via WebSocket.
    * *Rilevamento:* BitM Sentinel rileva la presenza di elementi video/canvas a tutto schermo in assenza di form HTML nativi su IP o domini che dichiarano titoli bancari/sensibili, classificando la minaccia con **Score 95 (BLOCK / BITM_STREAMING)**.
 
 ---

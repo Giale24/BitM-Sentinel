@@ -100,9 +100,12 @@ class DOMAnalyzer:
     async def process_analysis(request: AnalysisRequest) -> AnalysisResponse:
         # 1. Calcola euristiche server-side
         heuristic_score, heuristic_attack, heuristic_anomalies = DOMAnalyzer.run_server_heuristics(request)
+        print(f"Risk Score triage: {heuristic_score}")
 
         # 2. Invoca l'LLM client per l'analisi semantica
         llm_response = await LLMClient.analyze_page(request.model_dump())
+        print(f"Risk Score LLM: {llm_response.risk_score}")
+        
 
         # 3. Unisce i risultati (Massimo Rischio per evitare False Negatives)
         final_score = max(heuristic_score, llm_response.risk_score)

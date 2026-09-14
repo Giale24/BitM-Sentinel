@@ -141,6 +141,8 @@ class LLMClient:
             resp.raise_for_status()
             data = resp.json()
             content = data.get("message", {}).get("content", "")
+            if content:
+                print(f"[Ollama Debug JSON] {content}")
             return LLMClient._parse_json_response(content)
 
     @staticmethod
