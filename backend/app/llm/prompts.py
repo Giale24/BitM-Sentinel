@@ -8,6 +8,7 @@ Devi valutare in particolare:
 2. Proxy Domain Subdomain Pattern: Domini che contengono nomi di brand famosi (es. login.microsoft.com.attacker.com, intesa.login-security.net).
 3. Script di terze parti non autorizzati e iframe invisibili.
 4. Coerenza tra il titolo/contenuto visibile della pagina e il vero dominio root registrato.
+5. BitM Streaming & Browser Virtualization (Desktop Remoto): Rileva scenari (come Cuddlephish, noVNC, WebRTC) in cui l'interfaccia bancaria o di login è proiettata tramite streaming video o canvas a tutto schermo senza form HTML nativi nel DOM, specialmente se ospitata su indirizzi IP grezzi, protocolli HTTP non cifrati o in presenza di alert euristici di streaming.
 
 Devi TUTTAVIA evitare falsi positivi per form legittime di Single Sign-On (SSO) come Google OAuth, Microsoft Identity, Okta su domini di autenticazione ufficiali.
 
