@@ -1,26 +1,33 @@
 // BitM Sentinel - Real-time Mitigation & User Defense Overlay
+// Generazione procedurale dell'interfaccia di sicurezza direttamente nel DOM:
+// 1) Garantisce iniezione atomica e immediata senza dipendenze da risorse remote;
+// 2) Gli stili inline con '!important' prevengono manomissioni o override CSS da parte della pagina attaccante;
+// 3) Disabilita tempestivamente i campi sensibili per bloccare la fuga di credenziali in tempo reale.
 
-// OVERLAY INLINE: L'interfaccia è generata via JS (e non file esterni) per:
-    // 1) Iniettare nativamente nel DOM 2) Evitare che l'attaccante sovrascriva 
-    // il nostro CSS nascondendo il blocco 3) Garantire latenza zero sull'interfaccia
-
-
-//oggetto globale per la gestione della mitigazione e dell'overlay di avviso in caso di rilevamento di gravità rossa (BLOCK) o media (WARN)
+/**
+ * Modulo globale per la gestione della mitigazione attiva nel browser.
+ * Visualizza overlay modali bloccanti (azione BLOCK) o banner di avvertimento (azione WARN).
+ */
 window.BitMMitigation = {
   /**
-   * Mostra una modale bloccante a schermo intero se viene rilevato un attacco BitM grave
+   * Mostra una modale bloccante a schermo intero in caso di attacco critico (risk score >= 75).
+   * Disabilita temporaneamente tutti gli input del form e vincola la navigazione dell'utente.
+   *
+   * @param {string} reasoning - Giustificazione dell'analisi semantica o del fallback di sicurezza.
    */
-  showBlockOverlay: function (reasoning) { //chiamata quando il risk score è >= 75
-    if (document.getElementById("bitm-block-overlay")) return;// controlla se l'overlay è già presente per evitare duplicazioni
+  showBlockOverlay: function (reasoning) {
+    // Verifica se l'overlay è già presente nel DOM per evitare duplicazioni
+    if (document.getElementById("bitm-block-overlay")) return;
 
-    // Disabilita solo gli input attualmente attivi nella pagina, tracciandoli
+    // Disabilita solo gli elementi interattivi attualmente attivi, tracciandoli tramite dataset
     document.querySelectorAll("input, button, select, textarea").forEach((el) => {
       if (!el.disabled) {
         el.dataset.bitmDisabled = "true";
         el.disabled = true;
       }
     });
-    // div dell'overlay con messaggio di avviso e motivazione dell'analisi semantica LLM
+
+    // Costruzione del contenitore overlay ad altissimo z-index
     const overlay = document.createElement("div");
     overlay.id = "bitm-block-overlay";
     overlay.style.cssText = `
@@ -112,13 +119,13 @@ window.BitMMitigation = {
 
     document.body.appendChild(overlay);
 
-    // Sanificazione Anti-XSS: popoliamo il testo tramite textContent (non innerHTML)
+    // Sanificazione Anti-XSS: impostazione del contenuto testuale tramite textContent (previene DOM XSS)
     const reasoningTextNode = document.getElementById("bitm-block-reasoning-text");
     if (reasoningTextNode) {
       reasoningTextNode.textContent = reasoning || "La pagina sta tentando di intercettare le credenziali tramite un proxy non autorizzato.";
     }
 
-    // Gestione dei bottoni dell'overlay
+    // Registrazione degli ascoltatori di eventi per i pulsanti di navigazione sicura e bypass
     document.getElementById("bitm-btn-back").addEventListener("click", () => {
       window.history.back();
     });
@@ -133,7 +140,12 @@ window.BitMMitigation = {
     });
   },
 
-  // Mostra un banner di avviso in alto se viene rilevato un attacco di gravità media (WARN)
+  /**
+   * Mostra un banner persistente in cima alla viewport in caso di rischio moderato (WARN, score 40-74).
+   * Notifica l'utente senza interrompere forzatamente l'operatività della pagina.
+   *
+   * @param {string} reasoning - Descrizione dell'anomalia riscontrata.
+   */
   showWarningBanner: function (reasoning) {
     if (document.getElementById("bitm-warn-banner")) return;
 

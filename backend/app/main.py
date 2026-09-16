@@ -1,12 +1,12 @@
-import sys #moduli per la gestione del path di importazione
+import sys  # Moduli per la gestione del path di sistema
 import pathlib
 
-# Aggiunge la cartella 'backend' a sys.path per permettere gli import 'from app....'
-sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent)) #path injection per importare moduli da 'backend/app'
+# Aggiunge la cartella radice 'backend' a sys.path per permettere gli import assoluti 'from app....'
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.config import settings #nostri moduli di configurazione
+from app.config import settings  # Modulo di configurazione e variabili d'ambiente
 from app.api.schemas import AnalysisRequest, AnalysisResponse
 from app.analyzers.dom_analyzer import DOMAnalyzer
 
@@ -31,8 +31,8 @@ app.add_middleware(
     allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["*"],
 )
-#configurazione endpopoin FastAPI 
-@app.get("/") #chiama l'endpoint principale per verificare lo stato dell'applicazione su localhost:8000/
+# Configurazione endpoint FastAPI
+@app.get("/")  # Endpoint principale di verifica stato su http://localhost:8000/
 async def root():
     return {
         "message": "BitM Sentinel LLM Backend Engine is running!",
@@ -44,14 +44,15 @@ async def root():
     }
 
 @app.get("/health")
-async def health_check():#check dello stato di salute dell'applicazione e del provider LLM configurato 
+async def health_check():  # Controllo dello stato di salute del backend e del modello LLM attivo
     return {
         "status": "healthy",
         "app": settings.APP_NAME,
         "provider": settings.LLM_PROVIDER,
         "model": settings.LLM_MODEL
     }
-#usiamo POST per il payload JSON
+
+# Endpoint principale di analisi: riceve il payload JSON strutturato dal browser
 @app.post(f"{settings.API_PREFIX}/analyze", response_model=AnalysisResponse)
 async def analyze_page(request: AnalysisRequest):
     """

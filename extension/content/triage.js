@@ -1,8 +1,15 @@
 // BitM Sentinel - Fast Client-side Triage (Heuristics Engine)
+// Modulo eseguito localmente nel browser per calcolare uno score preliminare (< 5ms)
+// e rilevare vettori evidenti di attacco prima dell'eventuale inoltro al backend LLM.
 
-
-/*Calcola la distanza di Levenshtein tra due stringhe (per rilevamento typosquatting/domain spoofing)
-calcola quanti caratteri si devono modificare per trasformare una stringa nell'altra*/
+/**
+ * Calcola la distanza di modifica (Levenshtein Distance) tra due stringhe.
+ * Utilizzata per il rilevamento euristico di typosquatting o domain spoofing mirato a brand protetti.
+ *
+ * @param {string} a - Prima stringa (es. etichetta del dominio sotto esame).
+ * @param {string} b - Seconda stringa (es. nome brand target).
+ * @returns {number} Numero minimo di modifiche a carattere singolo (inserimenti, eliminazioni, sostituzioni).
+ */
 function levenshteinDistance(a, b) {
   const matrix = Array.from({ length: a.length + 1 }, () => []);
   for (let i = 0; i <= a.length; i++) matrix[i][0] = i;
@@ -22,13 +29,19 @@ function levenshteinDistance(a, b) {
 }
 
 /**
- * Analizzatore Euristico Locale (Triage veloce < 5ms)
+ * Oggetto globale del Triage Euristico Locale.
+ * Espone costanti di brand intelligence e il metodo di scansione rapida del DOM.
  */
 window.BitMTriage = {
-  // Lista di brand comunemente bersaglio di attacchi BitM / AitM
+  // Lista di brand finanziari e tech ad alta incidenza di attacchi BitM/AiTM (Reverse Proxy Phishing)
   TARGET_BRANDS: ["microsoft", "google", "paypal", "intesa", "postepay", "github", "apple", "amazon"],
 
-  //esegue i test per ottenere un referto rapido 
+  /**
+   * Esegue la scansione euristica sincrona a bassissima latenza (< 5ms).
+   * Valuta form sensibili, mismatch di destinazione, subdomini proxati, typosquatting, iframe e flussi streaming.
+   *
+   * @returns {Object} Oggetto strutturato con triageScore (0-100), flags esplicative, flag di sensibilità e timestamp.
+   */
   runFastTriage: function () {
     const flags = [];
     let score = 0;
@@ -116,7 +129,7 @@ window.BitMTriage = {
     });
     
     if (hiddenIframeCount > 0) {
-      score += 15; // Aggiungiamo il malus una sola volta, non per ogni iframe!
+      score += 15; // Penalità forfettaria applicata una sola volta se rilevati elementi iframe nascosti
       flags.push(`Rilevati ${hiddenIframeCount} iframe invisibili (potenziali tracker o clickjacking)`);
     }
 

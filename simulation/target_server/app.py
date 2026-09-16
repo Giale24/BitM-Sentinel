@@ -1,3 +1,12 @@
+"""
+Server Web Target Legittimo (Simulazione Ambiente di Test).
+
+Questo modulo avvia un server HTTP multi-thread sulla porta 5000 (http://localhost:5000)
+che emula l'applicazione bancaria / di autenticazione autentica ("Banca Sicura").
+Fornisce la pagina di login legittima con form POST verso la dashboard interna,
+fungendo da sorgente reale (upstream server) per il proxy malevolo di simulazione.
+"""
+
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 
 HTML_LOGIN_PAGE = """<!DOCTYPE html>
@@ -29,6 +38,11 @@ HTML_LOGIN_PAGE = """<!DOCTYPE html>
 """
 
 class LegitimateTargetHandler(BaseHTTPRequestHandler):
+    """
+    Gestore delle richieste HTTP per il server target legittimo.
+    Risponde alle richieste GET con la pagina di autenticazione e alle richieste POST
+    confermandone l'avvenuta ricezione sulla dashboard autorizzata.
+    """
     def do_GET(self):
         if self.path == "/login" or self.path == "/":
             self.send_response(200)

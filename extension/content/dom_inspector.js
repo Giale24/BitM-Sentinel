@@ -1,8 +1,8 @@
 // BitM Sentinel - DOM Inspector & Network Interceptor
 
-//funzione anonima auto-invocata per evitare conflitti di variabili globali e creare un contesto isolato per l'analisi del DOM e l'intercettazione delle richieste di rete
+// Funzione anonima auto-invocata (IIFE) per evitare collisioni nello scope globale
 (function () {
-  console.log("[BitM Sentinel] Client inspector inizializzato su:", window.location.href); //Log di debug
+  console.log("[BitM Sentinel] Client inspector inizializzato su:", window.location.href);
 
   // Stato di rischio locale sincronizzato (consente decisioni immediate e sincrone al submit)
   let localPageState = {
@@ -18,6 +18,19 @@
     localPageState.riskScore = initialTriage.triageScore;
     localPageState.reasoning = initialTriage.flags.join(". ");
   }
+  
+  // Trigger di analisi automatica: attivabile decommentando il blocco sottostante
+  /*
+  const formsPresent = document.querySelectorAll("form").length > 0;
+  const streamPresent = document.querySelectorAll("video, canvas").length > 0;
+  const isSuspicious = initialTriage.hasSensitiveInput || initialTriage.triageScore >= 15 || formsPresent || streamPresent;
+
+  if (isSuspicious) {
+    console.log("[BitM Sentinel] Rilevata pagina con form o dati sensibili: avvio analisi automatica...");
+    inspectAndAnalyzePage(initialTriage);
+  }
+  */
+
 
   // Il popup invia un messaggio al content script per forzare l'analisi della pagina
   chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
@@ -58,11 +71,11 @@
   }, true);
 
   /**
-   * Costruiamo il pacchetto di prove da inviare al backend per l'analisi del rischio della pagina.
+   * Estrae le evidenze strutturali del DOM e le invia al background Service Worker.
    */
   function inspectAndAnalyzePage(triageData) {
     const formsData = [];
-    document.querySelectorAll("form").forEach((form, idx) => { //scansiona tutti i form e raccoglie info
+    document.querySelectorAll("form").forEach((form, idx) => {  // Scansiona ciascun form HTML per estrarne gli input
       const inputs = [];
       form.querySelectorAll("input, select, textarea").forEach((inp) => {
         inputs.push({
@@ -80,14 +93,15 @@
       });
     });
 
-    // Cattura gli script esterni caricati nella pagina per l'analisi del rischio, se ci sono keylogger o script sospetti, il backend può rilevarli
+    // Cattura i domini degli script esterni per rilevare keylogger o risorse iniettate da terzi
     const scriptSources = [];
     document.querySelectorAll("script[src]").forEach((scr) => {
       try {
         scriptSources.push(new URL(scr.src, window.location.href).hostname);
       } catch (e) {}
     });
-    //assembla il payload da inviare al backend per l'analisi del rischio della pagina
+
+    // Assembla il payload compatto da inviare al backend FastAPI
     const payload = {
       url: window.location.href,
       domain: window.location.hostname,
@@ -100,8 +114,8 @@
       // Snippet del testo visibile per la verifica semantica da parte dell'LLM (max 1000 char per ridurre token e latenza)
       visibleTextSnippet: (document.body ? document.body.innerText : "").substring(0, 1000).replace(/\s+/g, " ")
     };
-    /* il payload viene inviato al service worker che a sua volta lo invia al backend per l'analisi del rischio della pagina, 
-    che risponde con un punteggio di rischio e una raccomandazione di azione (ALLOW, WARN, BLOCK)*/
+
+    // Inoltra il payload al Service Worker (che gestisce la comunicazione con FastAPI superando CORS e CSP)
     chrome.runtime.sendMessage({ action: "CHECK_PAGE_RISK", payload: payload }, (response) => {
       if (response && response.status === "SUCCESS") {
         const result = response.data;

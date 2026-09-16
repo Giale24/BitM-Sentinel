@@ -14,13 +14,21 @@
     <div class="login-box">
         <h2>Accedi al servizio</h2>
         <p>Inserisci i tuoi dati:</p>
-        <!-- Invia i dati in GET (insicuro) sullo stesso dominio, generando un warning (Giallo) -->
+        <!-- 
+            Vulnerabilità CWE-598 (Use of GET Request with Sensitive Query Strings):
+            L'invio di credenziali in chiaro tramite metodo HTTP GET accoda i dati alla query string,
+            esponendoli nei log web, nella cronologia del browser e negli header Referer.
+            Nello stesso dominio genera un avviso di livello medio (WARN, Score >= 40).
+        -->
         <form action="" method="GET">
             <input type="text" name="username" placeholder="Username" required>
             <input type="password" name="password" placeholder="Password" required>
             <button type="submit">Log in</button>
         </form>
-        <!-- Un iframe invisibile per far salire leggermente lo score euristico senza sforare nel rosso -->
+        <!-- 
+            Elemento iframe invisibile inserito per calibrare lo score euristico client-side (triage)
+            senza superare la soglia critica di blocco (BLOCK, Score >= 75).
+        -->
         <iframe src="about:blank" style="display:none;"></iframe>
     </div>
 </body>

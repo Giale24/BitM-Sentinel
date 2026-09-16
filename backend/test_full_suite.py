@@ -1,3 +1,13 @@
+"""
+Suite di Test di Regressione e Validazione BitM Sentinel.
+
+Copre tutti i moduli critici della pipeline:
+- Euristiche deterministiche Fast-Path (CWE-598, Reverse Proxy Mismatch, Raw IP, BitM Streaming);
+- Gestione della fusione dei referti e fail-safe integrato;
+- Parser JSON tollerante per output LLM (con gestione Markdown fences e tag <think>);
+- Politica di eviction per la cache in memoria e validazione schemi Pydantic Settings.
+"""
+
 import os
 import sys
 import unittest

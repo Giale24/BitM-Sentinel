@@ -12,21 +12,22 @@ class LLMClient:
     """
     _cache = {}  # Cache in memoria per evitare chiamate ripetute sullo stesso URL/payload
 
-    #esegue l'hash per poi usarla come entry per la cache in memoria, evitando chiamate ripetute allo stesso URL/payload
+    # Calcola l'hash MD5 del payload per l'accesso a latenza zero alla cache in memoria
     @staticmethod
     async def analyze_page(payload: dict) -> AnalysisResponse:
         url = payload.get("url", "")
         payload_hash = hashlib.md5(json.dumps(payload, sort_keys=True).encode("utf-8")).hexdigest()
         cache_key = f"{url}:{payload_hash}"
 
-        # Ritorna il risultato dalla cache se disponibile
+        # Ritorna immediatamente il risultato dalla cache in-memory se già analizzato
         if cache_key in LLMClient._cache:
             print(f"[LLMClient Cache Hit] Risposta recuperata dalla cache locale per: {url}")
             return LLMClient._cache[cache_key]
-        # Smistamento dei modelli LLM in base al provider configurato nel file .env
+        
+        # Smistamento dinamico verso il provider LLM configurato in config.py / .env
         provider = settings.LLM_PROVIDER.strip().lower()
         model_name = settings.LLM_MODEL.strip()
-        user_prompt = build_user_prompt(payload) #funzione file prompts.py
+        user_prompt = build_user_prompt(payload)  # Costruisce il prompt formattato con i dati del DOM
 
         try:
             if provider == "ollama":
@@ -188,7 +189,7 @@ class LLMClient:
             else:
                 return LLMClient._parse_json_response(response.choices[0].message.content)
 
-    #esegue il parsing della risposta JSON grezza dell'LLM e la converte in un oggetto AnalysisResponse
+    # Converte ed estrae in modo robusto il JSON dalla risposta grezza dell'LLM in un oggetto AnalysisResponse
     @staticmethod
     def _parse_json_response(raw_text: str) -> AnalysisResponse:
         import re

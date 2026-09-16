@@ -1,7 +1,11 @@
-// BitM Sentinel- Popup Controller
+// BitM Sentinel - Popup Controller
+// Gestisce l'interfaccia grafica del popup dell'estensione Chrome:
+// visualizzazione metrica di rischio, latenza, classificazione della minaccia
+// e pannello di configurazione per l'endpoint del backend.
 
-document.addEventListener("DOMContentLoaded", async () => {   // sia assicura che il DOM sia completamente caricato prima di eseguire il codice
-  const statusBadge = document.getElementById("statusBadge"); //dichiara le variabili per gli elementi del DOM che verranno aggiornati con i dati ricevuti dal service worker
+document.addEventListener("DOMContentLoaded", async () => {
+  // Riferimenti agli elementi DOM per la visualizzazione delle metriche
+  const statusBadge = document.getElementById("statusBadge");
   const scoreCircle = document.getElementById("scoreCircle");
   const scoreValue = document.getElementById("scoreValue");
   const statusValue = document.getElementById("statusValue");
@@ -9,18 +13,18 @@ document.addEventListener("DOMContentLoaded", async () => {   // sia assicura ch
   const attackTypeValue = document.getElementById("attackTypeValue");
   const reasoningText = document.getElementById("reasoningText");
 
+  // Riferimenti ai controlli interattivi e pannello impostazioni
   const btnReanalyze = document.getElementById("btnReanalyze");
   const btnToggleSettings = document.getElementById("btnToggleSettings");
   const settingsPanel = document.getElementById("settingsPanel");
   const backendUrlInput = document.getElementById("backendUrlInput");
   const btnSaveSettings = document.getElementById("btnSaveSettings");
 
-  // Invece di hardcodare l'URL del backend, lo recupera dalle impostazioni salvate in chrome.storage.local, permettendo all'utente di configurarlo tramite l'interfaccia popup
+  // Recupero dell'URL del backend salvato nello storage locale per pre-popolare il form di configurazione
   const { backendUrl } = await chrome.storage.local.get(["backendUrl"]);
   if (backendUrl) backendUrlInput.value = backendUrl;
 
-  /* ottiene lo stato della scheda attiva e invia un messaggio al service worker per ottenere l'ultimo stato di analisi della pagina corrente. 
-  Una volta ricevuta la risposta, aggiorna l'interfaccia utente con i dati ricevuti.*/
+  // Interrogazione dello stato di sicurezza della scheda attiva inviata al service worker
   chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
     if (tabs[0]) {
       chrome.runtime.sendMessage({ action: "GET_TAB_STATUS", tabId: tabs[0].id, url: tabs[0].url }, (res) => {
@@ -28,7 +32,8 @@ document.addEventListener("DOMContentLoaded", async () => {   // sia assicura ch
       });
     }
   });
-  // gestione bottoni analizza e impostazioni
+
+  // Gestione del pulsante di riesame forzato: invia un messaggio al content script della scheda corrente
   btnReanalyze.addEventListener("click", () => {
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
       if (tabs[0]) {
@@ -38,10 +43,12 @@ document.addEventListener("DOMContentLoaded", async () => {   // sia assicura ch
     });
   });
 
+  // Toggle di apertura/chiusura del pannello impostazioni di connessione
   btnToggleSettings.addEventListener("click", () => {
     settingsPanel.classList.toggle("hidden");
   });
 
+  // Salvataggio del nuovo URL dell'endpoint backend nello storage locale
   btnSaveSettings.addEventListener("click", async () => {
     const newUrl = backendUrlInput.value.trim();
     if (newUrl) {
@@ -51,7 +58,12 @@ document.addEventListener("DOMContentLoaded", async () => {   // sia assicura ch
     }
   });
 
-  // Funzione per aggiornare l'interfaccia utente in base ai dati ricevuti dal service worker
+  /**
+   * Aggiorna gli elementi grafici del popup (cerchio del punteggio, badge e messaggi descrittivi)
+   * in accordo con la tripartizione del verdetto: "ALLOW" (verde), "WARN" (giallo), "BLOCK" (rosso).
+   *
+   * @param {Object} data - Risultato dell'analisi restituito dal service worker.
+   */
   function updateUI(data) {
     const score = data.riskScore || 0;
     const status = data.status || "ALLOW";

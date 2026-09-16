@@ -9,6 +9,14 @@ class DOMAnalyzer:
 
     @staticmethod
     def run_server_heuristics(request: AnalysisRequest) -> tuple[int, str, list[str]]:
+        """
+        Calcola le euristiche deterministiche lato server (Fast-Path):
+        - Verifica form action mismatch (esfiltrazione credenziali cross-domain)
+        - Controllo CWE-598 (trasmissione password via HTTP GET)
+        - Rilevamento porte proxy di simulazione (5001)
+        - Riconoscimento IP grezzi non cifrati con titoli bancari (BitM / WebRTC)
+        - Consolidamento e mappatura dei flag provenienti dal triage client-side
+        """
         score = request.triageScore
         anomalies = list(request.triageFlags)
         attack_type = "NONE"

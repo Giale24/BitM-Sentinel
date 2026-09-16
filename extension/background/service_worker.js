@@ -1,26 +1,33 @@
 // BitM Sentinel - Background Service Worker (Manifest V3)
+// Componente centrale per la gestione asincrona del ciclo di vita dell'estensione:
+// 1) Riceve i payload estratti dal content script (DOM inspector);
+// 2) Invia i dati al backend FastAPI/LLM ed elabora la mitigazione;
+// 3) Gestisce il badge visivo e fornisce lo stato aggiornato all'interfaccia popup;
+// 4) Implementa una politica di fail-safe locale in caso di disconnessione del server.
 
 const DEFAULT_BACKEND_URL = "http://localhost:8000/api/v1/analyze";
 
-// Stato in memoria per ciascun Tab
+// Mappa in memoria per memorizzare lo stato di sicurezza associato a ciascun Tab ID e URL
 const tabStates = new Map();
 
-// Eviction automatica alla chiusura delle schede per prevenire memory leak
+// Pulizia automatica dello stato alla chiusura della scheda (prevenzione di memory leak)
 chrome.tabs.onRemoved.addListener((closedTabId) => {
   tabStates.delete(closedTabId);
 });
 
-// Ascolta messaggi inviati dai content scripts (dom_inspector, triage, overlay)
+// Dispatcher dei messaggi scambiati tra content scripts, popup e service worker
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   const tabId = sender.tab ? sender.tab.id : (request.tabId || null);
 
+  // Azione 1: Richiesta di analisi di sicurezza del DOM corrente
   if (request.action === "CHECK_PAGE_RISK") {
     handlePageAnalysis(request.payload, tabId)
       .then((response) => sendResponse(response))
       .catch((err) => sendResponse({ status: "ERROR", error: err.message }));
-    return true; // Risposta asincrona
+    return true; // Ritorna true per indicare che la risposta avverrà in modo asincrono
   }
 
+  // Azione 2: Interrogazione dello stato attuale della scheda da parte della UI Popup
   if (request.action === "GET_TAB_STATUS") {
     const targetTabId = request.tabId || (sender.tab ? sender.tab.id : null);
     const targetUrl = request.url || (sender.tab ? sender.tab.url : null);
@@ -30,15 +37,20 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                   { riskScore: 0, status: "SAFE", reasoning: "Nessuna anomalia rilevata." };
 
     sendResponse(state);
-    return false;
+    return false; // Risposta sincrona
   }
 });
 
 /**
- * Invia il payload della pagina al backend Python (FastAPI Engine) per l'analisi LLM
+ * Invia il payload della pagina al backend Python (FastAPI Engine) per l'analisi LLM e la classificazione.
+ * In caso di mancata risposta o timeout, attiva la procedura di fail-safe locale.
+ *
+ * @param {Object} payload - Dati del DOM e metriche del triage locale.
+ * @param {number|null} tabId - Identificativo numerico della scheda Chrome attiva.
+ * @returns {Promise<Object>} Esito dell'analisi con score di rischio e azione di mitigazione.
  */
 async function handlePageAnalysis(payload, tabId) {
-  // Recupera l'URL del backend dalle impostazioni o usa il default
+  // Recupera l'endpoint backend configurato nelle preferenze locali (fallback a DEFAULT_BACKEND_URL)
   const storage = await chrome.storage.local.get(["backendUrl"]);
   const backendUrl = storage.backendUrl || DEFAULT_BACKEND_URL;
 
@@ -127,7 +139,11 @@ async function handlePageAnalysis(payload, tabId) {
 }
 
 /**
- * Aggiorna il badge colorato e il testo sopra l'icona dell'estensione
+ * Aggiorna il badge testuale e il colore di sfondo sull'icona dell'estensione per la scheda specificata.
+ *
+ * @param {number} tabId - ID della scheda su cui impostare il badge.
+ * @param {string} status - Stato di mitigazione ("ALLOW", "WARN", "BLOCK").
+ * @param {number} score - Punteggio di rischio calcolato (0-100).
  */
 function updateTabBadge(tabId, status, score) {
   let badgeText = "";
@@ -149,12 +165,14 @@ function updateTabBadge(tabId, status, score) {
 }
 
 /**
- * Salva lo storico delle analisi nello storage locale dell'estensione
+ * Salva il log dell'analisi corrente nello storage locale (con rotazione FIFO a max 50 elementi).
+ *
+ * @param {Object} logEntry - Record dettagliato dell'analisi da registrare.
  */
 async function saveAnalysisLog(logEntry) {
   const { logs = [] } = await chrome.storage.local.get(["logs"]);
   logs.unshift(logEntry);
-  // Mantieni solo gli ultimi 50 log
+  // Mantieni solo gli ultimi 50 log per prevenire l'eccesso di storage
   if (logs.length > 50) logs.pop();
   await chrome.storage.local.set({ logs });
 }
