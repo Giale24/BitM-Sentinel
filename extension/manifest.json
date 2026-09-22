@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "BitM Sentinel",
-  "version": "1.0.0",
+  "version": "2.1.1",
   "description": "Rilevamento e mitigazione in tempo reale di attacchi Browser-in-the-Middle (BitM) tramite LLM.",
   "permissions": [
     "storage",

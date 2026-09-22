@@ -13,7 +13,7 @@ from app.analyzers.dom_analyzer import DOMAnalyzer
 # Creazione dell'app FastAPI con configurazioni di base e middleware CORS, http://localhost:8000/docs per la documentazione Swagger UI
 app = FastAPI( 
     title=settings.APP_NAME,
-    version="1.0.0",
+    version="2.1.1",
     description="Engine di rilevamento e mitigazione in tempo reale di attacchi Browser-in-the-Middle (BitM) tramite LLM."
 )
 
